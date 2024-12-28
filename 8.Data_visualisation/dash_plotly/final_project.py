@@ -4,54 +4,46 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 import pandas as pd
 import plotly.graph_objs as go
-import io,requests
+import io, requests
 
 # URL of the CSV file
 URL = "https://cf-courses-data.s3.us.cloud-object-storage.appdomain.cloud/IBMDeveloperSkillsNetwork-DV0101EN-SkillsNetwork/Data%20Files/historical_automobile_sales.csv"
 
 # Fetch the data from the URL
 response = requests.get(URL)
-
-# Raise an error if the request failed
-response.raise_for_status()
-
-# Convert the response content into a readable format for pandas
+response.raise_for_status()  # Raise an error if the request fails
 csv_content = io.StringIO(response.text)
 
 # Read the CSV data into a pandas dataframe
 df = pd.read_csv(csv_content)
-print(df.head())
+
+# Ensure correct data types and extract the year from the date
+df['Date'] = pd.to_datetime(df['Date'])
+df['Year'] = df['Date'].dt.year
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
 
 # Define the layout of the app
 app.layout = html.Div(children=[
-    html.H1('XYZAutomotives: Historical Trends in Automobile Sales Analysis'),
+    html.H1('Automobile Sales Statistics Dashboard'),
     
     # Dropdown for Year Selection
     html.Div([
         html.Label('Select Year:'),
         dcc.Dropdown(
             id='year-dropdown',
-            options=[{'label': str(year), 'value': year} for year in df['Date'].str[:4].unique()],
-            value=df['Date'].str[:4].iloc[0]  # Default value
+            options=[{'label': str(year), 'value': year} for year in df['Year'].unique()],
+            value=df['Year'].min()  # Default value
         )
     ], style={'width': '48%', 'display': 'inline-block', 'padding': '10px'}),
-    
-    # Graphs for Recession Report Statistics
+
+    # Graphs for Yearly Report Statistics
     html.Div([
-        # Line chart for Average Automobile Sales Fluctuation Over Recession Period (Year-wise)
-        dcc.Graph(id='avg-sales-fluctuation'),
-        
-        # Bar chart for Average Number of Vehicles Sold by Vehicle Type
-        dcc.Graph(id='avg-vehicles-by-type'),
-        
-        # Pie chart for Total Expenditure Share by Vehicle Type During Recessions
-        dcc.Graph(id='expenditure-share'),
-        
-        # Bar chart for Effect of Unemployment Rate on Vehicle Type and Sales
-        dcc.Graph(id='unemployment-effect')
+        dcc.Graph(id='avg-sales-fluctuation'),  # Line chart
+        dcc.Graph(id='avg-vehicles-by-type'),  # Bar chart
+        dcc.Graph(id='expenditure-share'),  # Pie chart
+        dcc.Graph(id='unemployment-effect')  # Dual-axis bar chart
     ], style={'margin-top': '20px'})
 ])
 
@@ -65,45 +57,46 @@ app.layout = html.Div(children=[
 )
 def update_graphs(year):
     # Filter data based on the selected year
-    filtered_df = df[df['Date'].str[:4] == year]
+    filtered_df = df[df['Year'] == year]
     
-    # Average Automobile Sales Fluctuation Over Recession Period (Year-wise)
-    avg_sales = filtered_df.groupby('Date')['Automobile_Sales'].mean().reset_index()
-    sales_fluctuation_fig = {
+    # Average Automobile Sales Fluctuation Over the Year
+    avg_sales = filtered_df.groupby(filtered_df['Date'].dt.month)['Automobile_Sales'].mean().reset_index()
+    avg_sales_fluctuation_fig = {
         'data': [go.Scatter(x=avg_sales['Date'], y=avg_sales['Automobile_Sales'], mode='lines', name='Sales')],
-        'layout': go.Layout(title='Average Automobile Sales Fluctuation Over Recession Period (Year-wise)', xaxis={'title': 'Year'}, yaxis={'title': 'Average Sales'})
+        'layout': go.Layout(title=f'Average Automobile Sales Fluctuation - {year}', 
+                            xaxis={'title': 'Month'}, yaxis={'title': 'Average Sales'})
     }
     
     # Average Number of Vehicles Sold by Vehicle Type
     avg_vehicles = filtered_df.groupby('Vehicle_Type')['Automobile_Sales'].mean().reset_index()
     avg_vehicles_fig = {
         'data': [go.Bar(x=avg_vehicles['Vehicle_Type'], y=avg_vehicles['Automobile_Sales'], name='Average Sales')],
-        'layout': go.Layout(title='Average Number of Vehicles Sold by Vehicle Type', xaxis={'title': 'Vehicle Type'}, yaxis={'title': 'Average Sales'})
+        'layout': go.Layout(title=f'Average Vehicles Sold by Type - {year}', 
+                            xaxis={'title': 'Vehicle Type'}, yaxis={'title': 'Average Sales'})
     }
     
-    # Total Expenditure Share by Vehicle Type During Recessions
+    # Total Expenditure Share by Vehicle Type
     expenditure_share = filtered_df.groupby('Vehicle_Type')['Advertising_Expenditure'].sum().reset_index()
     expenditure_share_fig = {
         'data': [go.Pie(labels=expenditure_share['Vehicle_Type'], values=expenditure_share['Advertising_Expenditure'])],
-        'layout': go.Layout(title='Total Expenditure Share by Vehicle Type During Recessions')
+        'layout': go.Layout(title=f'Total Advertising Expenditure Share by Type - {year}')
     }
     
     # Effect of Unemployment Rate on Vehicle Type and Sales
     unemployment_effect = filtered_df.groupby('Vehicle_Type')[['unemployment_rate', 'Automobile_Sales']].mean().reset_index()
     unemployment_effect_fig = {
         'data': [
-            go.Bar(x=unemployment_effect['Vehicle_Type'], y=unemployment_effect['unemployment_rate'], name='Unemployment Rate', yaxis='y1'),
-            go.Bar(x=unemployment_effect['Vehicle_Type'], y=unemployment_effect['Automobile_Sales'], name='Sales', yaxis='y2')
+            go.Bar(x=unemployment_effect['Vehicle_Type'], y=unemployment_effect['unemployment_rate'], name='Unemployment Rate'),
+            go.Bar(x=unemployment_effect['Vehicle_Type'], y=unemployment_effect['Automobile_Sales'], name='Sales')
         ],
         'layout': go.Layout(
-            title='Effect of Unemployment Rate on Vehicle Type and Sales',
+            title=f'Effect of Unemployment on Sales - {year}',
             xaxis={'title': 'Vehicle Type'},
-            yaxis=dict(title='Unemployment Rate', side='left'),
-            yaxis2=dict(title='Sales', overlaying='y', side='right')
+            yaxis={'title': 'Unemployment Rate', 'side': 'left'},
         )
     }
     
-    return sales_fluctuation_fig, avg_vehicles_fig, expenditure_share_fig, unemployment_effect_fig
+    return avg_sales_fluctuation_fig, avg_vehicles_fig, expenditure_share_fig, unemployment_effect_fig
 
 # Run the app
 if __name__ == '__main__':
